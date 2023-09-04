@@ -46,10 +46,10 @@ class Main:
     # main execution flow
     def run(self):
         # get all steam games json if not have already
-        # self.get_all_steam_games_json()
+        self.get_all_steam_games_json()
         
         # parse all games list into db
-        # self.save_all_games_to_db()
+        self.save_all_games_to_db()
     
         # get steam game info jsons
         self.get_appdetails_json() 
