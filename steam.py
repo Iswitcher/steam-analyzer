@@ -12,6 +12,9 @@ from datetime import datetime
 from fp.fp import FreeProxy
 from fp.errors import FreeProxyException
 
+import undetected_chromedriver as uc
+from selenium.webdriver.common.by import By
+
 class Main:
     url_steam_games     = "https://api.steampowered.com/ISteamApps/GetAppList/v0002/?format=json"
     json_steam_games    = "all_games.json"
@@ -19,9 +22,12 @@ class Main:
     url_game_info       = "https://store.steampowered.com/api/appdetails?appids="
     json_game_info      = "appdetails"
     
+    url_game_store_page = "https://store.steampowered.com/app/"
+    table_game_tags     = "tags"
+    
     db_path             = "steam.db"
-    table_all_games     = 'all_games'
-    table_game          = 'game'
+    table_all_games     = "all_games"
+    table_game          = "game"
     
     proxy = {'http': ''}
     
@@ -46,16 +52,19 @@ class Main:
     # main execution flow
     def run(self):
         # get all steam games json if not have already
-        self.get_all_steam_games_json()
+        # self.get_all_steam_games_json()
         
         # parse all games list into db
-        self.save_all_games_to_db()
+        # self.save_all_games_to_db()
     
         # get steam game info jsons
-        self.get_appdetails_json() 
+        # self.get_appdetails_json() 
         
         # parse appdetails json into db
-        # self.save_appdetails_to_json()
+        # self.save_appdetails_to_db()
+        
+        # get game tags
+        self.save_game_tags_to_db()
     
     
     # check if file exists
@@ -161,17 +170,20 @@ class Main:
             with open(filepath, 'w') as json_file:
                 json_file.write(data)
             log.info(f'added {filepath} {i}/{cnt}')
-            time.sleep(1.5)  # because fucking steam
+            time.sleep(1.1)  # because fucking steam timeout
 
     
     # parse appdetails json into db
-    def save_appdetails_to_json(self):
+    def save_appdetails_to_db(self):
         try:
             files = os.listdir(self.json_game_info)
+            f_cnt = len(files)
+            i = 0
             db_ctrl.check_db_file(self.db_path)
             conn = db_ctrl.connect(self.db_path)
             table = self.table_game
             for file in files:
+                i += 1
                 id = re.sub('.json', '', file)
                 path = self.json_game_info + '/' + file
                 with open(path, 'r') as json_file:
@@ -181,8 +193,11 @@ class Main:
                     appdata = data[id]['data']
                     row = self.delete_appdetails_ignored_att(appdata)
                     h = self.get_md5_hash(row)
+                    if db_ctrl.check_hash(conn, table, id, h):
+                        log.info(f'Game {id} (hash:{h}) already exists, skipping {i}/{f_cnt}')
+                        continue
                     db_ctrl.add_new_record(conn, table, 'game_id', id, row, h)
-                    log.info(f'Game {id} (hash:{h}) added')
+                    log.info(f'Game {id} (hash:{h}) added {i}/{f_cnt}')
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
             log.critical(f'ERROR in {method_name}: {e}')
@@ -214,6 +229,64 @@ class Main:
        dhash = hashlib.md5()
        dhash.update(j) 
        return dhash.hexdigest()    
+   
+   
+    # get game tags by crawling the browser
+    def save_game_tags_to_db(self):
+        appids = self.get_app_list()
+        driver = uc.Chrome(headless=True, use_subprocess=False) 
+        db_ctrl.check_db_file(self.db_path)
+        conn = db_ctrl.connect(self.db_path)
+        table = self.get_tags_table(conn)
+        i = 0
+        cnt = len(appids)
+        for app in appids:
+            i += 1
+            app_url = self.url_game_store_page + app            
+            tags = self.get_tags_from_url(driver, app_url)
+            if tags == None:
+                log.warning(f'No tags for {app} {i}/{cnt}')
+                continue
+            h = self.get_md5_hash(tags)
+            if db_ctrl.check_hash(conn, table, app, h):
+                log.warning(f'Skipped tags for {app} {i}/{cnt}')
+                continue
+            for tag in tags['tags']:
+                t = {}
+                t['tag'] = tag
+                db_ctrl.add_new_record(conn, table, 'game_id', app, t, h)
+            # db_ctrl.add_new_record(conn, table, 'game_id', app, tags, h)
+            log.info(f'Added tags for {app} (hash: {h}) {i}/{cnt}')
+        driver.quit
+
+
+    # find or create tags table
+    def get_tags_table(self, conn):
+        table = self.table_game_tags
+        if not db_ctrl.check_table(conn,table):
+            db_ctrl.create_table(conn, table)
+            # db_ctrl.add_table_column(conn, table, 'game_id', 'TEXT')
+            # db_ctrl.add_table_column(conn, table, 'tag', 'TEXT')  
+        return table 
+    
+    
+    # get tags via browser instance
+    def get_tags_from_url(self, driver, url):
+        result = {'tags': []}
+        try:
+            driver.get(url)
+            driver.find_element(By.CSS_SELECTOR, "[class='app_tag add_button']").click()
+            popular_tags = driver.find_element(By.CSS_SELECTOR, "[class='app_tags popular_tags']")
+            tags = popular_tags.find_elements(By.CSS_SELECTOR, "[class='app_tag']")
+            for tag in tags:
+                result['tags'].append(tag.text)
+            return result    
+        except Exception as e:
+            # NoSuchElementException
+            log.critical(f'Exception on {url}')
+            return None
+            
+
 
 class db_ctrl:
     # check or create db
@@ -409,9 +482,9 @@ class db_ctrl:
     # adds new record
     def add_new_record(conn, table, parent_name, parent_id, row, h):
         try:
-            if db_ctrl.check_hash(conn, table, parent_id, h):
-                log.info(f'Table {table}: game {parent_id} skipped, same hash')
-                return
+            # if db_ctrl.check_hash(conn, table, parent_id, h):
+            #     log.info(f'Table {table}: game {parent_id} skipped, same hash')
+            #     return
             if not db_ctrl.check_table(conn, table):
                 db_ctrl.create_table(conn, table)
             if not parent_name == None:
