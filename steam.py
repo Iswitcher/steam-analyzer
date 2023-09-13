@@ -15,6 +15,7 @@ from fp.errors import FreeProxyException
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 
+
 class Main:
     url_steam_games     = "https://api.steampowered.com/ISteamApps/GetAppList/v0002/?format=json"
     json_steam_games    = "all_games.json"
@@ -47,8 +48,13 @@ class Main:
         'content_descriptors',
         'package_groups',
         'recomendations'
-    ]    
-    
+    ]
+
+    # Main class constructor
+    def __init__(self):
+        # init the uc driver and set is to private field
+        self._driver = uc.Chrome(headless=True, use_subprocess=False)
+
     # main execution flow
     def run(self):
         # get all steam games json if not have already
@@ -234,7 +240,6 @@ class Main:
     # get game tags by crawling the browser
     def save_game_tags_to_db(self):
         appids = self.get_app_list()
-        driver = uc.Chrome(headless=True, use_subprocess=False) 
         db_ctrl.check_db_file(self.db_path)
         conn = db_ctrl.connect(self.db_path)
         table = self.get_tags_table(conn)
@@ -243,8 +248,8 @@ class Main:
         for app in appids:
             i += 1
             app_url = self.url_game_store_page + app            
-            tags = self.get_tags_from_url(driver, app_url)
-            if tags == None:
+            tags = self.get_tags_from_url(self._driver, app_url)
+            if tags is None:
                 log.warning(f'No tags for {app} {i}/{cnt}')
                 continue
             h = self.get_md5_hash(tags)
@@ -257,7 +262,6 @@ class Main:
                 db_ctrl.add_new_record(conn, table, 'game_id', app, t, h)
             # db_ctrl.add_new_record(conn, table, 'game_id', app, tags, h)
             log.info(f'Added tags for {app} (hash: {h}) {i}/{cnt}')
-        driver.quit
 
 
     # find or create tags table
@@ -271,12 +275,12 @@ class Main:
     
     
     # get tags via browser instance
-    def get_tags_from_url(self, driver, url):
+    def get_tags_from_url(self, url):
         result = {'tags': []}
         try:
-            driver.get(url)
-            driver.find_element(By.CSS_SELECTOR, "[class='app_tag add_button']").click()
-            popular_tags = driver.find_element(By.CSS_SELECTOR, "[class='app_tags popular_tags']")
+            self._driver.get(url)
+            self._driver.find_element(By.CSS_SELECTOR, "[class='app_tag add_button']").click()
+            popular_tags = self._driver.find_element(By.CSS_SELECTOR, "[class='app_tags popular_tags']")
             tags = popular_tags.find_elements(By.CSS_SELECTOR, "[class='app_tag']")
             for tag in tags:
                 result['tags'].append(tag.text)
