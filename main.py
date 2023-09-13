@@ -1,19 +1,22 @@
-import requests
-import json
-import traceback
-import os
-import sqlite3
 import hashlib
-import time
+import json
+import os
 import re
+import sqlite3
+import time
+import traceback
+from datetime import datetime
+
+import requests
+import undetected_chromedriver as uc
+from fake_useragent import UserAgent
+from fp.errors import FreeProxyException
+from fp.fp import FreeProxy
+from selenium.webdriver.common.by import By
 
 from log import log
-from datetime import datetime
-from fp.fp import FreeProxy
-from fp.errors import FreeProxyException
+from steam_api_manager import SteamAPIManager
 
-import undetected_chromedriver as uc
-from selenium.webdriver.common.by import By
 
 class Main:
     url_steam_games     = "https://api.steampowered.com/ISteamApps/GetAppList/v0002/?format=json"
@@ -47,8 +50,48 @@ class Main:
         'content_descriptors',
         'package_groups',
         'recomendations'
-    ]    
-    
+    ]
+
+    # Main class constructor
+    def __init__(self):
+        # init the uc driver and set is to private field
+        ua = UserAgent()
+        options = uc.ChromeOptions()
+        options.add_argument('--auto-open-devtools-for-tabs')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--blink-settings=imagesEnabled=false')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('User-Agent={0}'.format(ua.chrome))
+        self._driver = uc.Chrome(headless=False, use_subprocess=True, options=options)
+        self._driver.maximize_window()
+        self._driver.get('https://steamdb.info/app/570/charts/')
+        self.bypass_cloudflare()
+        self._steam_db_parser = SteamDBParser(self._driver)
+
+    def bypass_cloudflare(self):
+        if self._driver.capabilities["browserVersion"].split(".")[0] < "115":
+            return
+        time.sleep(1)
+        try:
+            self._driver.find_element(
+                By.ID, "challenge-stage"
+            ).click()  # make sure the challenge is focused
+            self._driver.execute_script(
+                '''window.open("''' + self._driver.current_url + """","_blank");"""
+            )  # open page in new tab
+            input(
+                "\033[93mWarning: Bypassing Cloudflare\nplease click on the captcha checkbox if not done already and press enter to continue\033[0m"
+            )
+            self._driver.switch_to.window(
+                window_name=self._driver.window_handles[0]
+            )  # switch to first tab
+            self._driver.close()  # close first tab
+            self._driver.switch_to.window(
+                window_name=self._driver.window_handles[0]
+            )  # switch back to new tab
+        except Exception as e:
+            return
+
     # main execution flow
     def run(self):
         # get all steam games json if not have already
@@ -64,7 +107,9 @@ class Main:
         # self.save_appdetails_to_db()
         
         # get game tags
-        self.save_game_tags_to_db()
+        #self.save_game_tags_to_db()
+
+        self._steam_db_parser.run(620)
     
     
     # check if file exists
@@ -234,7 +279,6 @@ class Main:
     # get game tags by crawling the browser
     def save_game_tags_to_db(self):
         appids = self.get_app_list()
-        driver = uc.Chrome(headless=True, use_subprocess=False) 
         db_ctrl.check_db_file(self.db_path)
         conn = db_ctrl.connect(self.db_path)
         table = self.get_tags_table(conn)
@@ -243,8 +287,8 @@ class Main:
         for app in appids:
             i += 1
             app_url = self.url_game_store_page + app            
-            tags = self.get_tags_from_url(driver, app_url)
-            if tags == None:
+            tags = self.get_tags_from_url(self._driver, app_url)
+            if tags is None:
                 log.warning(f'No tags for {app} {i}/{cnt}')
                 continue
             h = self.get_md5_hash(tags)
@@ -257,7 +301,6 @@ class Main:
                 db_ctrl.add_new_record(conn, table, 'game_id', app, t, h)
             # db_ctrl.add_new_record(conn, table, 'game_id', app, tags, h)
             log.info(f'Added tags for {app} (hash: {h}) {i}/{cnt}')
-        driver.quit
 
 
     # find or create tags table
@@ -271,12 +314,12 @@ class Main:
     
     
     # get tags via browser instance
-    def get_tags_from_url(self, driver, url):
+    def get_tags_from_url(self, url):
         result = {'tags': []}
         try:
-            driver.get(url)
-            driver.find_element(By.CSS_SELECTOR, "[class='app_tag add_button']").click()
-            popular_tags = driver.find_element(By.CSS_SELECTOR, "[class='app_tags popular_tags']")
+            self._driver.get(url)
+            self._driver.find_element(By.CSS_SELECTOR, "[class='app_tag add_button']").click()
+            popular_tags = self._driver.find_element(By.CSS_SELECTOR, "[class='app_tags popular_tags']")
             tags = popular_tags.find_elements(By.CSS_SELECTOR, "[class='app_tag']")
             for tag in tags:
                 result['tags'].append(tag.text)
@@ -567,4 +610,10 @@ class db_ctrl:
 
     
 if __name__ == '__main__':
+    """
+    key = 'AAAAAAAAAAAAAAAAAA' # get from https://steamcommunity.com/dev/apikey
+    steam_api_manager = SteamAPIManager(key=key)
+    players = steam_api_manager.get_current_players(570)
+    reviews = steam_api_manager.get_reviews(570)
+    """
     Main().run()
