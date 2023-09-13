@@ -20,7 +20,7 @@ class ReviewLoader:
         result = []
         url = f'https://store.steampowered.com/appreviews/{self._appid}'
         processed = 0
-        while processed <= self._total_reviews and processed <= 10:
+        while processed <= self._total_reviews:
             params = {
                 'json': 1,
                 'num_per_page': self._num_per_page,
