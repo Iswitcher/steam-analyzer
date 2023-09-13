@@ -1,19 +1,21 @@
-import requests
-import json
-import traceback
-import os
-import sqlite3
 import hashlib
-import time
+import json
+import os
 import re
+import sqlite3
+import time
+import traceback
+from datetime import datetime
+
+import requests
+import undetected_chromedriver as uc
+from fake_useragent import UserAgent
+from fp.errors import FreeProxyException
+from fp.fp import FreeProxy
+from selenium.webdriver.common.by import By
 
 from log import log
-from datetime import datetime
-from fp.fp import FreeProxy
-from fp.errors import FreeProxyException
-
-import undetected_chromedriver as uc
-from selenium.webdriver.common.by import By
+from steamdb_parser import SteamDBParser
 
 
 class Main:
@@ -53,7 +55,42 @@ class Main:
     # Main class constructor
     def __init__(self):
         # init the uc driver and set is to private field
-        self._driver = uc.Chrome(headless=True, use_subprocess=False)
+        ua = UserAgent()
+        options = uc.ChromeOptions()
+        options.add_argument('--auto-open-devtools-for-tabs')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--blink-settings=imagesEnabled=false')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('User-Agent={0}'.format(ua.chrome))
+        self._driver = uc.Chrome(headless=False, use_subprocess=True, options=options)
+        self._driver.maximize_window()
+        self._driver.get('https://steamdb.info/app/570/charts/')
+        self.bypass_cloudflare()
+        self._steam_db_parser = SteamDBParser(self._driver)
+
+    def bypass_cloudflare(self):
+        if self._driver.capabilities["browserVersion"].split(".")[0] < "115":
+            return
+        time.sleep(1)
+        try:
+            self._driver.find_element(
+                By.ID, "challenge-stage"
+            ).click()  # make sure the challenge is focused
+            self._driver.execute_script(
+                '''window.open("''' + self._driver.current_url + """","_blank");"""
+            )  # open page in new tab
+            input(
+                "\033[93mWarning: Bypassing Cloudflare\nplease click on the captcha checkbox if not done already and press enter to continue\033[0m"
+            )
+            self._driver.switch_to.window(
+                window_name=self._driver.window_handles[0]
+            )  # switch to first tab
+            self._driver.close()  # close first tab
+            self._driver.switch_to.window(
+                window_name=self._driver.window_handles[0]
+            )  # switch back to new tab
+        except Exception as e:
+            return
 
     # main execution flow
     def run(self):
@@ -70,7 +107,9 @@ class Main:
         # self.save_appdetails_to_db()
         
         # get game tags
-        self.save_game_tags_to_db()
+        #self.save_game_tags_to_db()
+
+        self._steam_db_parser.run(620)
     
     
     # check if file exists
