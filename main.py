@@ -286,10 +286,17 @@ class Main:
         cnt = len(appids)
         for app in appids:
             i += 1
-            app_url = self.url_game_store_page + app            
+            app_url = self.url_game_store_page + app 
+            if db_ctrl.check_if_records_exist(conn, table, app):
+                log.warning(f'Skipped tags for {app} {i}/{cnt}')
+                continue           
             tags = self.get_tags_from_url(self._driver, app_url)
             if tags is None:
                 log.warning(f'No tags for {app} {i}/{cnt}')
+                # adding dummy record
+                t = {}
+                t['tag'] = ''
+                db_ctrl.add_new_record(conn, table, 'game_id', app, t, '')
                 continue
             h = self.get_md5_hash(tags)
             if db_ctrl.check_hash(conn, table, app, h):
