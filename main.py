@@ -15,7 +15,7 @@ from fp.fp import FreeProxy
 from selenium.webdriver.common.by import By
 
 from log import log
-from steamdb_parser import SteamDBParser
+from steam_api_manager import SteamAPIManager
 
 
 class Main:
@@ -610,4 +610,10 @@ class db_ctrl:
 
     
 if __name__ == '__main__':
+    """
+    key = 'AAAAAAAAAAAAAAAAAA' # get from https://steamcommunity.com/dev/apikey
+    steam_api_manager = SteamAPIManager(key=key)
+    players = steam_api_manager.get_current_players(570)
+    reviews = steam_api_manager.get_reviews(570)
+    """
     Main().run()
