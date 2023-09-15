@@ -16,44 +16,24 @@ from selenium.webdriver.common.by import By
 
 from log import log
 from steamspy.steam_spy import SteamSpy
+from config import settings
 
 
 class Main:
-    url_steam_games = "https://api.steampowered.com/ISteamApps/GetAppList/v0002/?format=json"
-    json_steam_games = "all_games.json"
-
-    url_game_info = "https://store.steampowered.com/api/appdetails?appids="
-    json_game_info = "appdetails"
-
-    url_game_store_page = "https://store.steampowered.com/app/"
     table_game_tags = "tags"
-
-    db_path = "steam.db"
     table_all_games = "all_games"
     table_game = "game"
-
     proxy = {'http': ''}
-
-    ignored_game_att = [
-        'short_description',
-        'detailed_description',
-        'about_the_game',
-        'supported_languages',
-        'pc_requirements',
-        'mac_requirements',
-        'linux_requirements',
-        'screenshots',
-        'movies',
-        'background',
-        'background_raw',
-        'achievements',
-        'content_descriptors',
-        'package_groups',
-        'recomendations'
-    ]
 
     # Main class constructor
     def __init__(self):
+        self.url_steam_games = settings['url_steam_games']
+        self.json_steam_games = settings['json_steam_games']
+        self.url_game_info = settings['url_game_info']
+        self.json_game_info = settings['json_game_info']
+        self.url_game_store_page = settings['url_game_store_page']
+        self.db_path = settings['db_path']
+        self.ignored_game_att = settings['ignored_game_att']
         # init the uc driver and set is to private field
         ua = UserAgent()
         options = uc.ChromeOptions()
@@ -65,34 +45,8 @@ class Main:
         self._driver = uc.Chrome(headless=False, use_subprocess=True, options=options)
         self._driver.maximize_window()
         self._driver.get('https://steamdb.info/app/570/charts/')
-        self.bypass_cloudflare()
-        self._steam_db_parser = SteamDBParser(self._driver)
 
         self._steamspy = SteamSpy()
-
-    def bypass_cloudflare(self):
-        if self._driver.capabilities["browserVersion"].split(".")[0] < "115":
-            return
-        time.sleep(1)
-        try:
-            self._driver.find_element(
-                By.ID, "challenge-stage"
-            ).click()  # make sure the challenge is focused
-            self._driver.execute_script(
-                '''window.open("''' + self._driver.current_url + """","_blank");"""
-            )  # open page in new tab
-            input(
-                "\033[93mWarning: Bypassing Cloudflare\nplease click on the captcha checkbox if not done already and press enter to continue\033[0m"
-            )
-            self._driver.switch_to.window(
-                window_name=self._driver.window_handles[0]
-            )  # switch to first tab
-            self._driver.close()  # close first tab
-            self._driver.switch_to.window(
-                window_name=self._driver.window_handles[0]
-            )  # switch back to new tab
-        except Exception as e:
-            return
 
     # main execution flow
     def run(self):
