@@ -16,6 +16,7 @@ from selenium.webdriver.common.by import By
 
 from log import log
 from steam_api_manager import SteamAPIManager
+from steam_spy import SteamSpy
 
 
 class Main:
