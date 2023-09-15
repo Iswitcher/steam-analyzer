@@ -15,26 +15,26 @@ from fp.fp import FreeProxy
 from selenium.webdriver.common.by import By
 
 from log import log
-from steam_api_manager import SteamAPIManager
+from steamspy.steam_spy import SteamSpy
 
 
 class Main:
-    url_steam_games     = "https://api.steampowered.com/ISteamApps/GetAppList/v0002/?format=json"
-    json_steam_games    = "all_games.json"
-        
-    url_game_info       = "https://store.steampowered.com/api/appdetails?appids="
-    json_game_info      = "appdetails"
-    
+    url_steam_games = "https://api.steampowered.com/ISteamApps/GetAppList/v0002/?format=json"
+    json_steam_games = "all_games.json"
+
+    url_game_info = "https://store.steampowered.com/api/appdetails?appids="
+    json_game_info = "appdetails"
+
     url_game_store_page = "https://store.steampowered.com/app/"
-    table_game_tags     = "tags"
-    
-    db_path             = "steam.db"
-    table_all_games     = "all_games"
-    table_game          = "game"
-    
+    table_game_tags = "tags"
+
+    db_path = "steam.db"
+    table_all_games = "all_games"
+    table_game = "game"
+
     proxy = {'http': ''}
-    
-    ignored_game_att    = [
+
+    ignored_game_att = [
         'short_description',
         'detailed_description',
         'about_the_game',
@@ -68,6 +68,8 @@ class Main:
         self.bypass_cloudflare()
         self._steam_db_parser = SteamDBParser(self._driver)
 
+        self._steamspy = SteamSpy()
+
     def bypass_cloudflare(self):
         if self._driver.capabilities["browserVersion"].split(".")[0] < "115":
             return
@@ -96,46 +98,44 @@ class Main:
     def run(self):
         # get all steam games json if not have already
         # self.get_all_steam_games_json()
-        
+
         # parse all games list into db
         # self.save_all_games_to_db()
-    
+
         # get steam game info jsons
         # self.get_appdetails_json() 
-        
+
         # parse appdetails json into db
         # self.save_appdetails_to_db()
-        
+
         # get game tags
-        #self.save_game_tags_to_db()
+        # self.save_game_tags_to_db()
 
         self._steam_db_parser.run(620)
-    
-    
+
     # check if file exists
     def check_file(self, fpath):
         if os.path.exists(fpath):
             return True
         return False
-    
-    
-    #get random proxy
+
+    # get random proxy
     def getproxy(self):
         try:
             self.proxy['http'] = FreeProxy(rand=True).get()
             log.warning(f"Updated proxy to {self.proxy['http']}")
         except FreeProxyException as e:
             log.critical(f'failed to get a new proxy: {e}')
-            self.proxy['http'] = ''   
-    
-    
-    # get json from web by path
+            self.proxy['http'] = ''
+
+            # get json from web by path
+
     def get_json_from_url(self, url):
         try:
             proxies = None
             if self.proxy['http'] != '':
-                proxies = self.proxy    
-            response = requests.get(url, allow_redirects=True, proxies=proxies)          
+                proxies = self.proxy
+            response = requests.get(url, allow_redirects=True, proxies=proxies)
             if response.status_code == 200:
                 data = json.loads(response.text)
                 return data
@@ -153,19 +153,17 @@ class Main:
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
             log.critical(f'ERROR in {method_name}: {e}')
-    
-        
+
     # go to steam and dump all games list
     def get_all_steam_games_json(self):
         if self.check_file(self.json_steam_games):
             log.warning(f'Delete old file first! Skipping.')
             return
-        raw =  self.get_json_from_url(self.url_steam_games)
+        raw = self.get_json_from_url(self.url_steam_games)
         data = json.dumps(raw['applist']['apps'])
         with open(self.json_steam_games, 'w') as json_file:
             json_file.write(data)
-    
-            
+
     # dump all games to db
     def save_all_games_to_db(self):
         if not self.check_file(self.json_steam_games):
@@ -180,31 +178,30 @@ class Main:
             db_ctrl.create_table(conn, table)
         for app in data:
             # db_ctrl.check_columns(conn, table, app)
-            id  = app['appid']
-            h   = self.get_md5_hash(app)
+            id = app['appid']
+            h = self.get_md5_hash(app)
             if db_ctrl.check_hash(conn, table, id, h):
                 continue
             db_ctrl.close_old_record(conn, table, id)
             db_ctrl.add_new_record(conn, table, 'game_id', id, app, h)
-            log.info(f'Added game {app}') 
+            log.info(f'Added game {app}')
         db_ctrl.disconnect(conn)
-        
-        
+
     # get all app details jsons
     def get_appdetails_json(self):
         appids = self.get_app_list()
         cnt = len(appids)
         i = 0
         if not os.path.exists(self.json_game_info):
-                current_dir = os.getcwd()
-                new_dir = os.path.join(current_dir, self.json_game_info)
-                os.mkdir(new_dir)
+            current_dir = os.getcwd()
+            new_dir = os.path.join(current_dir, self.json_game_info)
+            os.mkdir(new_dir)
         files = os.listdir(self.json_game_info)
         for app in appids:
             i += 1
-            url = self.url_game_info+str(app)
+            url = self.url_game_info + str(app)
             filepath = self.json_game_info + '/' + str(app) + '.json'
-            if (str(app)+'.json') in files:
+            if (str(app) + '.json') in files:
                 log.info(f'App {app} exists, skipping  {i}/{cnt}')
                 continue
             raw = self.get_json_from_url(url)
@@ -217,7 +214,6 @@ class Main:
             log.info(f'added {filepath} {i}/{cnt}')
             time.sleep(1.1)  # because fucking steam timeout
 
-    
     # parse appdetails json into db
     def save_appdetails_to_db(self):
         try:
@@ -246,8 +242,7 @@ class Main:
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
             log.critical(f'ERROR in {method_name}: {e}')
-    
-    
+
     # delete ignored appdetails attributes
     def delete_appdetails_ignored_att(self, data):
         output = data.copy()
@@ -255,8 +250,7 @@ class Main:
             if att in self.ignored_game_att:
                 del output[att]
         return output
-        
-            
+
     # get apps to download details
     def get_app_list(self):
         output = []
@@ -265,18 +259,18 @@ class Main:
         ids = db_ctrl.execute_query(conn, q)
         for row in ids:
             output.append(row[0])
-        return output       
-            
-    
-    # get hash in md5
+        return output
+
+        # get hash in md5
+
     def get_md5_hash(self, data):
-       j = json.dumps(data, sort_keys=True).encode()
-       dhash = hashlib.md5()
-       dhash.update(j) 
-       return dhash.hexdigest()    
-   
-   
-    # get game tags by crawling the browser
+        j = json.dumps(data, sort_keys=True).encode()
+        dhash = hashlib.md5()
+        dhash.update(j)
+        return dhash.hexdigest()
+
+        # get game tags by crawling the browser
+
     def save_game_tags_to_db(self):
         appids = self.get_app_list()
         db_ctrl.check_db_file(self.db_path)
@@ -286,10 +280,10 @@ class Main:
         cnt = len(appids)
         for app in appids:
             i += 1
-            app_url = self.url_game_store_page + app 
+            app_url = self.url_game_store_page + app
             if db_ctrl.check_if_records_exist(conn, table, app):
                 log.warning(f'Skipped tags for {app} {i}/{cnt}')
-                continue           
+                continue
             tags = self.get_tags_from_url(self._driver, app_url)
             if tags is None:
                 log.warning(f'No tags for {app} {i}/{cnt}')
@@ -309,33 +303,27 @@ class Main:
             # db_ctrl.add_new_record(conn, table, 'game_id', app, tags, h)
             log.info(f'Added tags for {app} (hash: {h}) {i}/{cnt}')
 
-
     # find or create tags table
     def get_tags_table(self, conn):
         table = self.table_game_tags
-        if not db_ctrl.check_table(conn,table):
+        if not db_ctrl.check_table(conn, table):
             db_ctrl.create_table(conn, table)
             # db_ctrl.add_table_column(conn, table, 'game_id', 'TEXT')
             # db_ctrl.add_table_column(conn, table, 'tag', 'TEXT')  
-        return table 
-    
-    
+        return table
+
     # get tags via browser instance
-    def get_tags_from_url(self, url):
+    def get_tags_from_url(self, appid: int):
         result = {'tags': []}
         try:
-            self._driver.get(url)
-            self._driver.find_element(By.CSS_SELECTOR, "[class='app_tag add_button']").click()
-            popular_tags = self._driver.find_element(By.CSS_SELECTOR, "[class='app_tags popular_tags']")
-            tags = popular_tags.find_elements(By.CSS_SELECTOR, "[class='app_tag']")
-            for tag in tags:
-                result['tags'].append(tag.text)
-            return result    
+            app_details = self._steamspy.get_app_details(appid)
+            for tag in app_details.Tags:
+                result['tags'].append(tag)
+            return result
         except Exception as e:
             # NoSuchElementException
             log.critical(f'Exception on {url}')
             return None
-            
 
 
 class db_ctrl:
@@ -350,8 +338,7 @@ class db_ctrl:
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
             log.critical(f'ERROR in {method_name}: {e}')
-    
-            
+
     # connect to db
     def connect(path):
         try:
@@ -363,18 +350,16 @@ class db_ctrl:
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
             log.critical(f'ERROR in {method_name}: {e}')
-            
-    
+
     # Disconnect        
     def disconnect(conn):
         conn.close()
         log.info('DB disconnected')
         return
-    
-    
+
     # check if table exists
     def check_table(conn, name):
-        try: 
+        try:
             cursor = conn.cursor()
             q = f"""
                 SELECT name 
@@ -384,16 +369,16 @@ class db_ctrl:
                 """
             cursor.execute(q)
             if cursor.fetchone() is None:
-                return False        
-            # log.info(f'Table {name} found')
+                return False
+                # log.info(f'Table {name} found')
             cursor.close()
             return True
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
-            log.critical(f'ERROR in {method_name}: {e}')   
-    
-    
-    # create new table
+            log.critical(f'ERROR in {method_name}: {e}')
+
+            # create new table
+
     def create_table(conn, name):
         try:
             cursor = conn.cursor()
@@ -412,8 +397,7 @@ class db_ctrl:
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
             log.critical(f'ERROR in {method_name}: {e}')
-            
-            
+
     # check by row data if table column exists
     def check_column(conn, table, att):
         try:
@@ -427,10 +411,10 @@ class db_ctrl:
             db_ctrl.add_table_column(conn, table, att, t)
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
-            log.critical(f'ERROR in {method_name}: {e}') 
-    
-    
-    # check by row data if table column exists
+            log.critical(f'ERROR in {method_name}: {e}')
+
+            # check by row data if table column exists
+
     def check_columns(conn, table, row):
         try:
             cursor = conn.cursor()
@@ -444,10 +428,10 @@ class db_ctrl:
                 db_ctrl.add_table_column(conn, table, att, t)
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
-            log.critical(f'ERROR in {method_name}: {e}')         
-    
-    
-    # counts the occurence of column name in array of names   
+            log.critical(f'ERROR in {method_name}: {e}')
+
+            # counts the occurence of column name in array of names
+
     def cnt_col_occur(value, array):
         cnt = 0
         for i in array:
@@ -455,14 +439,13 @@ class db_ctrl:
                 cnt = cnt + 1
         return cnt
         # return sum([string.count(value) for string in array])        
-    
-    
+
     # adds new table column of specified type
     def add_table_column(conn, table, att_name, att_type):
         try:
             col_type = db_ctrl.get_column_type(att_type)
             if att_type == None:
-                return 
+                return
             cursor = conn.cursor()
             alter_query = f"""
                 ALTER TABLE {table} 
@@ -475,8 +458,7 @@ class db_ctrl:
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
             log.critical(f'ERROR in {method_name}: {e}')
-            
-            
+
     # parse json type to sql        
     def get_column_type(att_type):
         if att_type == int:
@@ -487,10 +469,9 @@ class db_ctrl:
             return 'TEXT'
         elif att_type == bool:
             return 'TEXT'
-        else: 
+        else:
             return None
-        
-    
+
     # check if a row can be skipped by comparing hash
     def check_hash(conn, table, id, h):
         try:
@@ -500,7 +481,7 @@ class db_ctrl:
                 FROM {table}
                 WHERE game_id = {id}
                 AND end_date > DATE('now')
-                """ 
+                """
             cursor.execute(q)
             row = cursor.fetchone()
             cursor.close()
@@ -510,8 +491,7 @@ class db_ctrl:
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
             log.critical(f'ERROR in {method_name}: {e}')
-    
-    
+
     # set enddate for deprecated record        
     def close_old_record(conn, table, id):
         try:
@@ -521,14 +501,13 @@ class db_ctrl:
                 SET end_date = DATE('now')
                 WHERE game_id = {id}
                 AND end_date > DATE('now')
-                """ 
+                """
             cursor.execute(q)
             cursor.close()
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
             log.critical(f'ERROR in {method_name}: {e}')
-            
-            
+
     # adds new record
     def add_new_record(conn, table, parent_name, parent_id, row, h):
         try:
@@ -561,7 +540,7 @@ class db_ctrl:
                             v = {}
                             v['value'] = item
                             db_ctrl.add_new_record(conn, att, parent_name, parent_id, v, h)
-            q_obj = db_ctrl.get_insert_query(table, parent_name, parent_id, h, columns, values) 
+            q_obj = db_ctrl.get_insert_query(table, parent_name, parent_id, h, columns, values)
             q = q_obj['query']
             values = q_obj['values']
             cursor = conn.cursor()
@@ -573,36 +552,34 @@ class db_ctrl:
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
             log.critical(f'ERROR in {method_name}: {e}')
-            
-            
+
     # returns insert query string and tuple with standart and table-specific values
-    def get_insert_query(table, parent_name, parent_id, h, columns, values): 
+    def get_insert_query(table, parent_name, parent_id, h, columns, values):
         # # add id
         # columns.append("game_id")
         # values.append(id)
-        
+
         # add parent
         if not parent_name == None:
             columns.append(parent_name)
             values.append(parent_id)
-        
+
         # add hash
         columns.append("hash")
         values.append(h)
-        
+
         # add dates
         columns.append("start_date")
         values.append(datetime.now())
         columns.append("end_date")
         values.append(datetime(9999, 12, 31, 23, 59, 59, 0))
-        
+
         query = f"""
             INSERT INTO {table} ({", ".join(columns)})
             VALUES ({", ".join(["?" for _ in values])})
-        """                    
+        """
         return {'query': query, 'values': tuple(values)}
-    
-    
+
     # execute raw inbound query and return the data
     def execute_query(conn, q):
         try:
@@ -615,7 +592,7 @@ class db_ctrl:
             method_name = traceback.extract_stack(None, 2)[0][2]
             log.critical(f'ERROR in {method_name}: {e}')
 
-    
+
 if __name__ == '__main__':
     """
     key = 'AAAAAAAAAAAAAAAAAA' # get from https://steamcommunity.com/dev/apikey
