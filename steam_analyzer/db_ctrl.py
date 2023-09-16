@@ -1,46 +1,30 @@
-import os
 import sqlite3
 import traceback
 from datetime import datetime
 
-from steam_analyzer.log import log
+from steam_analyzer.log import Log
 
 
-class db_ctrl:
-    # check or create db
-    def check_db_file(path):
+class DBCtrl:
+    def __init__(self, path: str, log: Log):
+        self.log = log
         try:
-            if not os.path.exists(path):
-                log.warning('No DB file found! Creating a new one')
-                conn = sqlite3.connect(path)
-                conn.commit()
-                conn.close
+            self.log.info(f'Connecting to database {path}')
+            self._conn = sqlite3.connect(path)
+            self.log.info('DB connection established')
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
-            log.critical(f'ERROR in {method_name}: {e}')
-
-    # connect to db
-    def connect(path):
-        try:
-            log.info(f'Connecting to database {path}')
-            db_ctrl.check_db_file(path)
-            conn = sqlite3.connect(path)
-            log.info('DB connection established')
-            return conn
-        except Exception as e:
-            method_name = traceback.extract_stack(None, 2)[0][2]
-            log.critical(f'ERROR in {method_name}: {e}')
+            self.log.critical(f'ERROR in {method_name}: {e}')
 
     # Disconnect
-    def disconnect(conn):
-        conn.close()
-        log.info('DB disconnected')
-        return
+    def disconnect(self):
+        self._conn.close()
+        self.log.info('DB disconnected')
 
     # check if table exists
-    def check_table(conn, name):
+    def check_table(self, name: str):
         try:
-            cursor = conn.cursor()
+            cursor = self._conn.cursor()
             q = f"""
                 SELECT name 
                 FROM sqlite_master 
@@ -55,13 +39,12 @@ class db_ctrl:
             return True
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
-            log.critical(f'ERROR in {method_name}: {e}')
+            self.log.critical(f'ERROR in {method_name}: {e}')
 
-            # create new table
-
-    def create_table(conn, name):
+    # create new table
+    def create_table(self, name: str):
         try:
-            cursor = conn.cursor()
+            cursor = self._conn.cursor()
             q = (f"""
                 CREATE TABLE {name}
                 (
@@ -72,47 +55,44 @@ class db_ctrl:
                 )""")
             cursor.execute(q)
             cursor.close()
-            log.info(f'Table {name} created')
-            return
+            self.log.info(f'Table {name} created')
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
-            log.critical(f'ERROR in {method_name}: {e}')
+            self.log.critical(f'ERROR in {method_name}: {e}')
 
     # check by row data if table column exists
-    def check_column(conn, table, att):
+    def check_column(self, table, att):
         try:
-            cursor = conn.cursor()
+            cursor = self._conn.cursor()
             cursor.execute(f"PRAGMA table_info({table})")
             rows = cursor.fetchall()
             column_names = [row[1] for row in rows]
-            if db_ctrl.cnt_col_occur(att, column_names) > 0:
+            if self.cnt_col_occur(att, column_names) > 0:
                 return
             t = type(att)
-            db_ctrl.add_table_column(conn, table, att, t)
+            self.add_table_column(table, att, t)
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
-            log.critical(f'ERROR in {method_name}: {e}')
+            self.log.critical(f'ERROR in {method_name}: {e}')
 
-            # check by row data if table column exists
-
-    def check_columns(conn, table, row):
+    # check by row data if table column exists
+    def check_columns(self, table, row):
         try:
-            cursor = conn.cursor()
+            cursor = self._conn.cursor()
             cursor.execute(f"PRAGMA table_info({table})")
             rows = cursor.fetchall()
             column_names = [row[1] for row in rows]
             for att in row:
-                if db_ctrl.cnt_col_occur(att, column_names) > 0:
+                if self.cnt_col_occur(att, column_names) > 0:
                     continue
                 t = type(row[att])
-                db_ctrl.add_table_column(conn, table, att, t)
+                self.add_table_column(table, att, t)
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
-            log.critical(f'ERROR in {method_name}: {e}')
+            self.log.critical(f'ERROR in {method_name}: {e}')
 
-            # counts the occurence of column name in array of names
-
-    def cnt_col_occur(value, array):
+    # counts the occurence of column name in array of names
+    def cnt_col_occur(self, value, array):
         cnt = 0
         for i in array:
             if i == value:
@@ -121,26 +101,26 @@ class db_ctrl:
         # return sum([string.count(value) for string in array])
 
     # adds new table column of specified type
-    def add_table_column(conn, table, att_name, att_type):
+    def add_table_column(self, table, att_name, att_type):
         try:
-            col_type = db_ctrl.get_column_type(att_type)
-            if att_type == None:
+            col_type = self.get_column_type(att_type)
+            if att_type is None:
                 return
-            cursor = conn.cursor()
+            cursor = self._conn.cursor()
             alter_query = f"""
                 ALTER TABLE {table} 
                 ADD COLUMN {att_name} {col_type}
                 """
             cursor.execute(alter_query)
-            conn.commit()
+            self._conn.commit()
             cursor.close()
-            log.info(f'Added column {att_name}:{att_type} to {table}')
+            self.log.info(f'Added column {att_name}:{att_type} to {table}')
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
-            log.critical(f'ERROR in {method_name}: {e}')
+            self.log.critical(f'ERROR in {method_name}: {e}')
 
     # parse json type to sql
-    def get_column_type(att_type):
+    def get_column_type(self, att_type):
         if att_type == int:
             return 'INTEGER'
         elif att_type == float:
@@ -153,9 +133,9 @@ class db_ctrl:
             return None
 
     # check if a row can be skipped by comparing hash
-    def check_hash(conn, table, id, h):
+    def check_hash(self, table, id, h):
         try:
-            cursor = conn.cursor()
+            cursor = self._conn.cursor()
             q = f"""
                 SELECT hash
                 FROM {table}
@@ -170,12 +150,12 @@ class db_ctrl:
             return False
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
-            log.critical(f'ERROR in {method_name}: {e}')
+            self.log.critical(f'ERROR in {method_name}: {e}')
 
     # set enddate for deprecated record
-    def close_old_record(conn, table, id):
+    def close_old_record(self, table, id):
         try:
-            cursor = conn.cursor()
+            cursor = self._conn.cursor()
             q = f"""
                 UPDATE {table}
                 SET end_date = DATE('now')
@@ -186,19 +166,19 @@ class db_ctrl:
             cursor.close()
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
-            log.critical(f'ERROR in {method_name}: {e}')
+            self.log.critical(f'ERROR in {method_name}: {e}')
 
     # adds new record
-    def add_new_record(conn, table, parent_name, parent_id, row, h):
+    def add_new_record(self, table, parent_name, parent_id, row, h):
         try:
             # if db_ctrl.check_hash(conn, table, parent_id, h):
             #     log.info(f'Table {table}: game {parent_id} skipped, same hash')
             #     return
-            if not db_ctrl.check_table(conn, table):
-                db_ctrl.create_table(conn, table)
-            if not parent_name == None:
-                db_ctrl.check_column(conn, table, parent_name)
-            db_ctrl.check_columns(conn, table, row)
+            if not self.check_table(table):
+                self.create_table(table)
+            if parent_name is not None:
+                self.check_column(table, parent_name)
+            self.check_columns(table, row)
             columns = []
             values = []
             for att in row:
@@ -210,37 +190,36 @@ class db_ctrl:
                     values.append(str(row[att]))
                 elif type(row[att]) == dict:
                     parent_name = table + '_id'
-                    db_ctrl.add_new_record(conn, att, parent_name, parent_id, row[att], h)
+                    self.add_new_record(att, parent_name, parent_id, row[att], h)
                 elif type(row[att]) == list:
                     parent_name = table + '_id'
                     for item in row[att]:
                         if type(item) == dict:
-                            db_ctrl.add_new_record(conn, att, parent_name, parent_id, item, h)
+                            self.add_new_record(att, parent_name, parent_id, item, h)
                         else:
                             v = {}
                             v['value'] = item
-                            db_ctrl.add_new_record(conn, att, parent_name, parent_id, v, h)
-            q_obj = db_ctrl.get_insert_query(table, parent_name, parent_id, h, columns, values)
+                            self.add_new_record(att, parent_name, parent_id, v, h)
+            q_obj = self.get_insert_query(table, parent_name, parent_id, h, columns, values)
             q = q_obj['query']
             values = q_obj['values']
-            cursor = conn.cursor()
+            cursor = self._conn.cursor()
             cursor.execute(q, values)
             cursor.close()
-            conn.commit()
+            self._conn.commit()
             # log.info(f'Table {table}: record {id} (hash:{h}) added')
-            return
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
-            log.critical(f'ERROR in {method_name}: {e}')
+            self.log.critical(f'ERROR in {method_name}: {e}')
 
     # returns insert query string and tuple with standart and table-specific values
-    def get_insert_query(table, parent_name, parent_id, h, columns, values):
+    def get_insert_query(self, table, parent_name, parent_id, h, columns, values):
         # # add id
         # columns.append("game_id")
         # values.append(id)
 
         # add parent
-        if not parent_name == None:
+        if parent_name is not None:
             columns.append(parent_name)
             values.append(parent_id)
 
@@ -261,15 +240,13 @@ class db_ctrl:
         return {'query': query, 'values': tuple(values)}
 
     # execute raw inbound query and return the data
-    def execute_query(conn, q):
+    def execute_query(self, q):
         try:
-            cursor = conn.cursor()
+            cursor = self._conn.cursor()
             cursor.execute(q)
             rows = cursor.fetchall()
             cursor.close()
             return rows
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
-            log.critical(f'ERROR in {method_name}: {e}')
-
-
+            self.log.critical(f'ERROR in {method_name}: {e}')

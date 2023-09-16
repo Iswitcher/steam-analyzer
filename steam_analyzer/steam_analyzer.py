@@ -11,8 +11,8 @@ from fake_useragent import UserAgent
 from fp.errors import FreeProxyException
 from fp.fp import FreeProxy
 
-from db_ctrl import db_ctrl
-from log import log
+from log import Log
+from db_ctrl import DBCtrl
 from steamspy.steam_spy import SteamSpy
 from config import settings
 
@@ -32,6 +32,10 @@ class Main:
         self.url_game_store_page = settings['url_game_store_page']
         self.db_path = settings['db_path']
         self.ignored_game_att = settings['ignored_game_att']
+
+        self._db_ctrl = DBCtrl(self.db_path)
+
+        self.log = Log()
         # init the uc driver and set is to private field
         ua = UserAgent()
         options = uc.ChromeOptions()
@@ -62,8 +66,7 @@ class Main:
 
         # get game tags
         # self.save_game_tags_to_db()
-
-        self._steam_db_parser.run(620)
+        pass
 
     # check if file exists
     def check_file(self, fpath):
@@ -75,9 +78,9 @@ class Main:
     def getproxy(self):
         try:
             self.proxy['http'] = FreeProxy(rand=True).get()
-            log.warning(f"Updated proxy to {self.proxy['http']}")
+            self.log.warning(f"Updated proxy to {self.proxy['http']}")
         except FreeProxyException as e:
-            log.critical(f'failed to get a new proxy: {e}')
+            self.log.critical(f'failed to get a new proxy: {e}')
             self.proxy['http'] = ''
 
             # get json from web by path
@@ -95,21 +98,21 @@ class Main:
                 # timeout = 5
                 # log.critical(f'Error 429, waiting for {timeout} seconds...')
                 # time.sleep(timeout)
-                log.critical(f'Error 429, changing proxy...')
+                self.log.critical(f'Error 429, changing proxy...')
                 self.getproxy()
                 data = self.get_json_from_url(url)
                 return data
             else:
-                log.warning(f'HTTP response code not 200: {response.status_code} {response.reason}')
+                self.log.warning(f'HTTP response code not 200: {response.status_code} {response.reason}')
                 return None
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
-            log.critical(f'ERROR in {method_name}: {e}')
+            self.log.critical(f'ERROR in {method_name}: {e}')
 
     # go to steam and dump all games list
     def get_all_steam_games_json(self):
         if self.check_file(self.json_steam_games):
-            log.warning(f'Delete old file first! Skipping.')
+            self.log.warning(f'Delete old file first! Skipping.')
             return
         raw = self.get_json_from_url(self.url_steam_games)
         data = json.dumps(raw['applist']['apps'])
@@ -119,25 +122,23 @@ class Main:
     # dump all games to db
     def save_all_games_to_db(self):
         if not self.check_file(self.json_steam_games):
-            log.critical(f'No steam games JSON found! Skipping.')
+            self.log.critical(f'No steam games JSON found! Skipping.')
             return
         table = self.table_all_games
-        db_ctrl.check_db_file(self.db_path)
-        conn = db_ctrl.connect(self.db_path)
         with open(self.json_steam_games, 'r') as json_file:
             data = json.load(json_file)
-        if not db_ctrl.check_table(conn, table):
-            db_ctrl.create_table(conn, table)
+        if not self._db_ctrl.check_table(table):
+            self._db_ctrl.create_table(table)
         for app in data:
             # db_ctrl.check_columns(conn, table, app)
             id = app['appid']
             h = self.get_md5_hash(app)
-            if db_ctrl.check_hash(conn, table, id, h):
+            if self._db_ctrl.check_hash(table, id, h):
                 continue
-            db_ctrl.close_old_record(conn, table, id)
-            db_ctrl.add_new_record(conn, table, 'game_id', id, app, h)
-            log.info(f'Added game {app}')
-        db_ctrl.disconnect(conn)
+            self._db_ctrl.close_old_record(table, id)
+            self._db_ctrl.add_new_record(table, 'game_id', id, app, h)
+            self.log.info(f'Added game {app}')
+        self._db_ctrl.disconnect()
 
     # get all app details jsons
     def get_appdetails_json(self):
@@ -154,16 +155,16 @@ class Main:
             url = self.url_game_info + str(app)
             filepath = self.json_game_info + '/' + str(app) + '.json'
             if (str(app) + '.json') in files:
-                log.info(f'App {app} exists, skipping  {i}/{cnt}')
+                self.log.info(f'App {app} exists, skipping  {i}/{cnt}')
                 continue
             raw = self.get_json_from_url(url)
             if raw == None:
-                log.critical(f'Bad output for {app}, stopping')
+                self.log.critical(f'Bad output for {app}, stopping')
                 break
             data = json.dumps(raw)
             with open(filepath, 'w') as json_file:
                 json_file.write(data)
-            log.info(f'added {filepath} {i}/{cnt}')
+            self.log.info(f'added {filepath} {i}/{cnt}')
             time.sleep(1.1)  # because fucking steam timeout
 
     # parse appdetails json into db
@@ -172,8 +173,6 @@ class Main:
             files = os.listdir(self.json_game_info)
             f_cnt = len(files)
             i = 0
-            db_ctrl.check_db_file(self.db_path)
-            conn = db_ctrl.connect(self.db_path)
             table = self.table_game
             for file in files:
                 i += 1
@@ -186,14 +185,14 @@ class Main:
                     appdata = data[id]['data']
                     row = self.delete_appdetails_ignored_att(appdata)
                     h = self.get_md5_hash(row)
-                    if db_ctrl.check_hash(conn, table, id, h):
-                        log.info(f'Game {id} (hash:{h}) already exists, skipping {i}/{f_cnt}')
+                    if self._db_ctrl.check_hash(table, id, h):
+                        self.log.info(f'Game {id} (hash:{h}) already exists, skipping {i}/{f_cnt}')
                         continue
-                    db_ctrl.add_new_record(conn, table, 'game_id', id, row, h)
-                    log.info(f'Game {id} (hash:{h}) added {i}/{f_cnt}')
+                    self._db_ctrl.add_new_record(table, 'game_id', id, row, h)
+                    self.log.info(f'Game {id} (hash:{h}) added {i}/{f_cnt}')
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
-            log.critical(f'ERROR in {method_name}: {e}')
+            self.log.critical(f'ERROR in {method_name}: {e}')
 
     # delete ignored appdetails attributes
     def delete_appdetails_ignored_att(self, data):
@@ -206,9 +205,8 @@ class Main:
     # get apps to download details
     def get_app_list(self):
         output = []
-        conn = db_ctrl.connect(self.db_path)
         q = "SELECT game_id from all_games where end_date > DATE('now')"
-        ids = db_ctrl.execute_query(conn, q)
+        ids = self._db_ctrl.execute_query(q)
         for row in ids:
             output.append(row[0])
         return output
@@ -225,41 +223,39 @@ class Main:
 
     def save_game_tags_to_db(self):
         appids = self.get_app_list()
-        db_ctrl.check_db_file(self.db_path)
-        conn = db_ctrl.connect(self.db_path)
-        table = self.get_tags_table(conn)
+        table = self.get_tags_table()
         i = 0
         cnt = len(appids)
         for app in appids:
             i += 1
             app_url = self.url_game_store_page + app
-            if db_ctrl.check_if_records_exist(conn, table, app):
-                log.warning(f'Skipped tags for {app} {i}/{cnt}')
+            if self._db_ctrl.check_if_records_exist(table, app):
+                self.log.warning(f'Skipped tags for {app} {i}/{cnt}')
                 continue
             tags = self.get_tags_from_url(self._driver, app_url)
             if tags is None:
-                log.warning(f'No tags for {app} {i}/{cnt}')
+                self.log.warning(f'No tags for {app} {i}/{cnt}')
                 # adding dummy record
                 t = {}
                 t['tag'] = ''
-                db_ctrl.add_new_record(conn, table, 'game_id', app, t, '')
+                self._db_ctrl.add_new_record(table, 'game_id', app, t, '')
                 continue
             h = self.get_md5_hash(tags)
-            if db_ctrl.check_hash(conn, table, app, h):
-                log.warning(f'Skipped tags for {app} {i}/{cnt}')
+            if self._db_ctrl.check_hash(table, app, h):
+                self.log.warning(f'Skipped tags for {app} {i}/{cnt}')
                 continue
             for tag in tags['tags']:
                 t = {}
                 t['tag'] = tag
-                db_ctrl.add_new_record(conn, table, 'game_id', app, t, h)
+                self._db_ctrl.add_new_record(table, 'game_id', app, t, h)
             # db_ctrl.add_new_record(conn, table, 'game_id', app, tags, h)
-            log.info(f'Added tags for {app} (hash: {h}) {i}/{cnt}')
+            self.log.info(f'Added tags for {app} (hash: {h}) {i}/{cnt}')
 
     # find or create tags table
-    def get_tags_table(self, conn):
+    def get_tags_table(self):
         table = self.table_game_tags
-        if not db_ctrl.check_table(conn, table):
-            db_ctrl.create_table(conn, table)
+        if not self._db_ctrl.check_table(table):
+            self._db_ctrl.create_table(table)
             # db_ctrl.add_table_column(conn, table, 'game_id', 'TEXT')
             # db_ctrl.add_table_column(conn, table, 'tag', 'TEXT')
         return table
@@ -274,7 +270,7 @@ class Main:
             return result
         except Exception as e:
             # NoSuchElementException
-            log.critical(f'Exception on {url}')
+            self.log.critical(f'Exception on {url}')
             return None
 
 
