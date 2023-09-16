@@ -1,11 +1,9 @@
 from typing import Type
 
 import requests
-from types import SimpleNamespace
-import json
 
-from log import log
-from steamspy.app_details import AppDetails
+from steam_analyzer.log import log
+from steam_analyzer.steamspy.app_details import AppDetails
 
 
 class SteamSpy:
