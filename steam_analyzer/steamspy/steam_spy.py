@@ -2,7 +2,7 @@ from typing import Type
 
 import requests
 
-from steam_analyzer.log import log
+from steam_analyzer.log import Log
 from steam_analyzer.steamspy.app_details import AppDetails
 
 
@@ -15,9 +15,18 @@ class SteamSpy:
             resp = requests.get(url)
             code = resp.status_code
             if code != 200:
-                log.warning(f'got response code {code} for {url}')
-            result.Tags = resp.json()['tags']
+                Log.warning(f'got response code {code} for {url}')
+                return result
+            data = resp.json()
+            # parse tags
+            result.Tags = data['tags']
+            #parse owners
+            values = data['owners'].split(' .. ')
+            if len(values) != 2:
+                raise ValueError('invalid owners format')
+            result.OwnersFrom = int(values[0].replace(',', ''))
+            result.OwnersTo = int(values[1].replace(',', ''))
         except Exception as e:
-            log.critical(f'while trying to get {url} from steamspy: {e}')
+            Log.critical(f'while trying to get {url} from steamspy: {e}')
         finally:
             return result
