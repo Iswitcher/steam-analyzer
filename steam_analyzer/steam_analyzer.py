@@ -11,9 +11,9 @@ from fake_useragent import UserAgent
 from fp.errors import FreeProxyException
 from fp.fp import FreeProxy
 
-from log import Log
-from db_ctrl import DBCtrl
-from steamspy.steam_spy import SteamSpy
+from steam_analyzer.db_ctrl import DBCtrl
+from steam_analyzer.log import Log
+from steam_analyzer.steamspy.steam_spy import SteamSpy
 from config import settings
 
 
