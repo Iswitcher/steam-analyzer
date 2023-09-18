@@ -11,6 +11,7 @@ class DBCtrl:
         try:
             self.log.info(f'Connecting to database {path}')
             self._conn = sqlite3.connect(path)
+            self._cursor = self._conn.cursor()
             self.log.info('DB connection established')
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
@@ -18,24 +19,22 @@ class DBCtrl:
 
     # Disconnect
     def disconnect(self):
+        self._cursor.close()
         self._conn.close()
         self.log.info('DB disconnected')
 
     # check if table exists
     def check_table(self, name: str):
         try:
-            cursor = self._conn.cursor()
             q = f"""
                 SELECT name 
                 FROM sqlite_master 
                 WHERE type='table' 
                 AND name='{name}'
                 """
-            cursor.execute(q)
-            if cursor.fetchone() is None:
+            self._cursor.execute(q)
+            if self._cursor.fetchone() is None:
                 return False
-                # log.info(f'Table {name} found')
-            cursor.close()
             return True
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
@@ -44,7 +43,6 @@ class DBCtrl:
     # create new table
     def create_table(self, name: str):
         try:
-            cursor = self._conn.cursor()
             q = (f"""
                 CREATE TABLE {name}
                 (
@@ -53,8 +51,7 @@ class DBCtrl:
                     start_date  DATE,
                     end_date    DATE
                 )""")
-            cursor.execute(q)
-            cursor.close()
+            self._cursor.execute(q)
             self.log.info(f'Table {name} created')
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
@@ -63,9 +60,8 @@ class DBCtrl:
     # check by row data if table column exists
     def check_column(self, table, att):
         try:
-            cursor = self._conn.cursor()
-            cursor.execute(f"PRAGMA table_info({table})")
-            rows = cursor.fetchall()
+            self._cursor.execute(f"PRAGMA table_info({table})")
+            rows = self._cursor.fetchall()
             column_names = [row[1] for row in rows]
             if self.cnt_col_occur(att, column_names) > 0:
                 return
@@ -78,9 +74,8 @@ class DBCtrl:
     # check by row data if table column exists
     def check_columns(self, table, row):
         try:
-            cursor = self._conn.cursor()
-            cursor.execute(f"PRAGMA table_info({table})")
-            rows = cursor.fetchall()
+            self._cursor.execute(f"PRAGMA table_info({table})")
+            rows = self._cursor.fetchall()
             column_names = [row[1] for row in rows]
             for att in row:
                 if self.cnt_col_occur(att, column_names) > 0:
@@ -106,14 +101,12 @@ class DBCtrl:
             col_type = self.get_column_type(att_type)
             if att_type is None:
                 return
-            cursor = self._conn.cursor()
             alter_query = f"""
                 ALTER TABLE {table} 
                 ADD COLUMN {att_name} {col_type}
                 """
-            cursor.execute(alter_query)
+            self._cursor.execute(alter_query)
             self._conn.commit()
-            cursor.close()
             self.log.info(f'Added column {att_name}:{att_type} to {table}')
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
@@ -135,16 +128,14 @@ class DBCtrl:
     # check if a row can be skipped by comparing hash
     def check_hash(self, table, id, h):
         try:
-            cursor = self._conn.cursor()
             q = f"""
                 SELECT hash
                 FROM {table}
                 WHERE game_id = {id}
                 AND end_date > DATE('now')
                 """
-            cursor.execute(q)
-            row = cursor.fetchone()
-            cursor.close()
+            self._cursor.execute(q)
+            row = self._cursor.fetchone()
             if row is not None:
                 return True
             return False
@@ -155,15 +146,13 @@ class DBCtrl:
     # set enddate for deprecated record
     def close_old_record(self, table, id):
         try:
-            cursor = self._conn.cursor()
             q = f"""
                 UPDATE {table}
                 SET end_date = DATE('now')
                 WHERE game_id = {id}
                 AND end_date > DATE('now')
                 """
-            cursor.execute(q)
-            cursor.close()
+            self._cursor.execute(q)
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
             self.log.critical(f'ERROR in {method_name}: {e}')
@@ -203,9 +192,7 @@ class DBCtrl:
             q_obj = self.get_insert_query(table, parent_name, parent_id, h, columns, values)
             q = q_obj['query']
             values = q_obj['values']
-            cursor = self._conn.cursor()
-            cursor.execute(q, values)
-            cursor.close()
+            self._cursor.execute(q, values)
             self._conn.commit()
             # log.info(f'Table {table}: record {id} (hash:{h}) added')
         except Exception as e:
@@ -242,10 +229,8 @@ class DBCtrl:
     # execute raw inbound query and return the data
     def execute_query(self, q):
         try:
-            cursor = self._conn.cursor()
-            cursor.execute(q)
-            rows = cursor.fetchall()
-            cursor.close()
+            self._cursor.execute(q)
+            rows = self._cursor.fetchall()
             return rows
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
