@@ -219,11 +219,10 @@ class Main:
         cnt = len(appids)
         for app in appids:
             i += 1
-            app_url = self.url_game_store_page + app
             if self._db_ctrl.check_if_records_exist(table, app):
                 self.log.warning(f'Skipped tags for {app} {i}/{cnt}')
                 continue
-            tags = self.get_tags_from_url(self._driver, app_url)
+            tags = self.get_tags_from_url(self._driver, app)
             if tags is None:
                 self.log.warning(f'No tags for {app} {i}/{cnt}')
                 # adding dummy record
