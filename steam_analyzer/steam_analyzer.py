@@ -33,9 +33,9 @@ class Main:
         self.db_path = settings['db_path']
         self.ignored_game_att = settings['ignored_game_att']
 
-        self._db_ctrl = DBCtrl(self.db_path)
-
         self.log = Log()
+        self._db_ctrl = DBCtrl(self.db_path, self.log)
+
         # init the uc driver and set is to private field
         ua = UserAgent()
         options = uc.ChromeOptions()
@@ -44,29 +44,21 @@ class Main:
         options.add_argument('--blink-settings=imagesEnabled=false')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('User-Agent={0}'.format(ua.chrome))
-        self._driver = uc.Chrome(headless=False, use_subprocess=True, options=options)
-        self._driver.maximize_window()
-        self._driver.get('https://steamdb.info/app/570/charts/')
-
+        self._driver = uc.Chrome(headless=True, use_subprocess=True, options=options)
         self._steamspy = SteamSpy()
 
     # main execution flow
     def run(self):
         # get all steam games json if not have already
-        # self.get_all_steam_games_json()
-
+        self.get_all_steam_games_json()
         # parse all games list into db
-        # self.save_all_games_to_db()
-
+        self.save_all_games_to_db()
         # get steam game info jsons
-        # self.get_appdetails_json()
-
+        self.get_appdetails_json()
         # parse appdetails json into db
-        # self.save_appdetails_to_db()
-
+        self.save_appdetails_to_db()
         # get game tags
-        # self.save_game_tags_to_db()
-        pass
+        self.save_game_tags_to_db()
 
     # check if file exists
     def check_file(self, fpath):
@@ -138,7 +130,6 @@ class Main:
             self._db_ctrl.close_old_record(table, id)
             self._db_ctrl.add_new_record(table, 'game_id', id, app, h)
             self.log.info(f'Added game {app}')
-        self._db_ctrl.disconnect()
 
     # get all app details jsons
     def get_appdetails_json(self):
