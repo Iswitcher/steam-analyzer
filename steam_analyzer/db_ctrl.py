@@ -235,3 +235,21 @@ class DBCtrl:
         except Exception as e:
             method_name = traceback.extract_stack(None, 2)[0][2]
             self.log.critical(f'ERROR in {method_name}: {e}')
+
+
+    # check if any records exist
+    def check_if_records_exist(self, table, id):
+        try:
+            q = f"""
+                SELECT 1
+                FROM {table}
+                WHERE game_id = {id}
+                AND end_date > DATE('now')
+            """
+            self._cursor.execute(q)
+            rows = self._cursor.fetchall()
+            if len(rows) > 0: 
+                return True
+            return False
+        except Exception as e:
+            return False

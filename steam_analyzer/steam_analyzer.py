@@ -222,7 +222,7 @@ class Main:
             if self._db_ctrl.check_if_records_exist(table, app):
                 self.log.warning(f'Skipped tags for {app} {i}/{cnt}')
                 continue
-            tags = self.get_tags_from_url(self._driver, app)
+            tags = self.get_tags_from_url(app)
             if tags is None:
                 self.log.warning(f'No tags for {app} {i}/{cnt}')
                 # adding dummy record
