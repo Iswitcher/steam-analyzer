@@ -1,5 +1,8 @@
 # DB file
 steam.db
+all_games.json
+appdetails/
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
