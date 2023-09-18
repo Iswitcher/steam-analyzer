@@ -2,3 +2,6 @@ requests~=2.31.0
 selenium~=4.12.0
 steam~=1.4.4
 dynaconf~=3.2.3
+fake_useragent~=1.2.1
+free-proxy~=1.1.1
+undetected_chromedriver~=3.5.3
