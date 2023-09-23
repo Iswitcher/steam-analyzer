@@ -20,12 +20,21 @@ class SteamSpy:
             data = resp.json()
             # parse tags
             result.Tags = data['tags']
-            #parse owners
+            # parse owners
             values = data['owners'].split(' .. ')
             if len(values) != 2:
                 raise ValueError('invalid owners format')
             result.OwnersFrom = int(values[0].replace(',', ''))
             result.OwnersTo = int(values[1].replace(',', ''))
+            # parse players
+            result.Avg2Weeks = data['average_2weeks']
+            result.AvgForever = data['average_forever']
+            result.Median2Weeks = data['median_2weeks']
+            result.MedianForever = data['median_forever']
+            result.Ccu = data['ccu']
+            # parse reviews
+            result.ReviewsNegative = data['negative']
+            result.ReviewsPositive = data['positive']
         except Exception as e:
             Log.critical(f'while trying to get {url} from steamspy: {e}')
         finally:

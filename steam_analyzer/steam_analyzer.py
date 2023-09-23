@@ -18,6 +18,7 @@ from config import settings
 
 
 class Main:
+    table_game_steamspy = "steamspy"
     table_game_tags = "tags"
     table_all_games = "all_games"
     table_game = "game"
@@ -50,15 +51,17 @@ class Main:
     # main execution flow
     def run(self):
         # get all steam games json if not have already
-        self.get_all_steam_games_json()
+        # self.get_all_steam_games_json()
         # parse all games list into db
-        self.save_all_games_to_db()
+        # self.save_all_games_to_db()
         # get steam game info jsons
-        self.get_appdetails_json()
+        # self.get_appdetails_json()
         # parse appdetails json into db
-        self.save_appdetails_to_db()
+        # self.save_appdetails_to_db()
         # get game tags
-        self.save_game_tags_to_db()
+        # self.save_game_tags_to_db()
+        # get steamspy data
+        self.get_appdetails_steamspy_json()
 
     # check if file exists
     def check_file(self, fpath):
@@ -77,6 +80,7 @@ class Main:
 
             # get json from web by path
 
+    # go to url, fetch json, return
     def get_json_from_url(self, url):
         try:
             proxies = None
@@ -87,9 +91,6 @@ class Main:
                 data = json.loads(response.text)
                 return data
             if response.status_code == 429:
-                # timeout = 5
-                # log.critical(f'Error 429, waiting for {timeout} seconds...')
-                # time.sleep(timeout)
                 self.log.critical(f'Error 429, changing proxy...')
                 self.getproxy()
                 data = self.get_json_from_url(url)
@@ -204,6 +205,7 @@ class Main:
 
         # get hash in md5
 
+    # hashes json data as md5 hash
     def get_md5_hash(self, data):
         j = json.dumps(data, sort_keys=True).encode()
         dhash = hashlib.md5()
@@ -212,9 +214,10 @@ class Main:
 
         # get game tags by crawling the browser
 
+    # get all games, update their tags
     def save_game_tags_to_db(self):
         appids = self.get_app_list()
-        table = self.get_tags_table()
+        table = self.get_table(self.table_game_tags)
         i = 0
         cnt = len(appids)
         for app in appids:
@@ -241,9 +244,8 @@ class Main:
             # db_ctrl.add_new_record(conn, table, 'game_id', app, tags, h)
             self.log.info(f'Added tags for {app} (hash: {h}) {i}/{cnt}')
 
-    # find or create tags table
-    def get_tags_table(self):
-        table = self.table_game_tags
+    # find or create table
+    def get_table(self, table):
         if not self._db_ctrl.check_table(table):
             self._db_ctrl.create_table(table)
             # db_ctrl.add_table_column(conn, table, 'game_id', 'TEXT')
@@ -263,4 +265,40 @@ class Main:
             self.log.critical(f'Exception on {url}')
             return None
 
+    # download steamspy stats for game and insert into db
+    def get_appdetails_steamspy_json(self):
+        try:
+            appids = self.get_app_list()
+            table = self.get_table(self.table_game_steamspy)
+            i = 0
+            cnt = len(appids)
+            for app in appids:
+                i += 1
+                if self._db_ctrl.check_if_records_exist(table, app):
+                    self.log.warning(f'Skipped steamspy for {app} {i}/{cnt}')
+                    continue
+                spy_details = self._steamspy.get_app_details(app)
+                json_details = self.transform_steamspy_to_json(spy_details)
+                h = self.get_md5_hash(json_details)
+                if self._db_ctrl.check_hash(table, app, h):
+                    self.log.info(f'Game {app}({h}) steamspy already exists, skipping {i}/{cnt}')
+                    continue
+                self._db_ctrl.add_new_record(table, 'game_id', app, json_details, h)
+                self.log.info(f'Game {app}:({h}) steamspy added {i}/{cnt}')
+        except Exception as e:
+            method_name = traceback.extract_stack(None, 2)[0][2]
+            self.log.critical(f'ERROR in {method_name}: {e}')
 
+    # transform to json
+    def transform_steamspy_to_json(self, spy_data):
+        result = {}
+        result['owners_from'] = spy_data.OwnersFrom
+        result['owners_to'] = spy_data.OwnersTo
+        result['avg_2_weeks'] = spy_data.Avg2Weeks
+        result['avg_forever'] = spy_data.AvgForever
+        result['median_2_weeks'] = spy_data.Median2Weeks
+        result['median_forever'] = spy_data.MedianForever
+        result['ccu'] = spy_data.Ccu
+        result['reviews_positive'] = spy_data.ReviewsNegative
+        result['reviews_negative'] = spy_data.ReviewsPositive
+        return result

@@ -236,7 +236,6 @@ class DBCtrl:
             method_name = traceback.extract_stack(None, 2)[0][2]
             self.log.critical(f'ERROR in {method_name}: {e}')
 
-
     # check if any records exist
     def check_if_records_exist(self, table, id):
         try:
